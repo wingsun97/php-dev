@@ -1,0 +1,127 @@
+#
+# docker build -t smart-webman:8.3.30 .
+#
+# =========================
+# stage 1: build extensions
+# =========================
+FROM php:8.3.30-cli-alpine AS build
+
+# 安装构建工具和依赖
+RUN apk add --no-cache \
+    bash \
+    autoconf \
+    build-base \
+    pkgconfig \
+    linux-headers \
+    git \
+    curl \
+    # GD deps
+    freetype-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
+    # intl
+    icu-dev \
+    # gettext
+    gettext-dev \
+    # xsl
+    libxml2-dev \
+    libxslt-dev \
+    # zip
+    libzip-dev \
+    # imagick
+    imagemagick-dev \
+    # PostgreSQL
+    postgresql-dev
+
+# 配置 GD
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp
+
+# 安装 PHP 内置扩展，包括 opcache 和 pcntl
+RUN docker-php-ext-install -j$(nproc) \
+    bcmath \
+    ftp \
+    gettext \
+    intl \
+    mysqli \
+    shmop \
+    sockets \
+    sysvsem \
+    xsl \
+    zip \
+    pdo \
+    pdo_mysql \
+    pgsql \
+    pdo_pgsql \
+    gd \
+    opcache \
+    pcntl
+
+# 安装 PECL 扩展（imagick 和 redis）
+RUN pecl install imagick redis \
+    && docker-php-ext-enable imagick redis
+
+# 从官方 composer 镜像拷贝 composer
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+
+# 配置 Opcache CLI 可用
+RUN echo "opcache.enable_cli=1" > /usr/local/etc/php/conf.d/docker-php-opcache.ini
+
+
+# =========================
+# stage 2: runtime image
+# =========================
+FROM php:8.3.30-cli-alpine
+
+ARG USERNAME=wingsun
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+ENV DOCKER_BUILDKIT=1
+
+# 运行期所需的动态库（不是 -dev）
+RUN apk add --no-cache \
+    icu-libs \
+    freetype \
+    libjpeg-turbo \
+    libpng \
+    libwebp \
+    libxml2 \
+    libxslt \
+    libzip \
+    imagemagick \
+    postgresql-libs \
+    gettext \
+    bash \
+    curl \
+    git
+
+# 拷贝 PHP 扩展和配置
+COPY --from=build /usr/local/lib/php/extensions /usr/local/lib/php/extensions
+COPY --from=build /usr/local/etc/php/conf.d /usr/local/etc/php/conf.d
+COPY --from=build /usr/local/bin/composer /usr/local/bin/composer
+
+# 安装 gh 所需运行时工具
+# RUN apk add --no-cache bash git curl \
+#     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+#        | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+#     && echo "https://cli.github.com/packages stable main" | tee /etc/apk/repositories \
+#     && apk add --no-cache gh
+
+RUN addgroup -g ${USER_GID} -S ${USERNAME}
+RUN adduser -u ${USER_UID} -S -G ${USERNAME} -h /home/${USERNAME} -s /bin/bash ${USERNAME}
+
+RUN chown -R ${USER_UID}:${USER_GID} /home/${USERNAME}
+
+USER ${USERNAME}
+
+# 设置容器默认的工作目录
+# WORKDIR /app
+WORKDIR /home/${USERNAME}
+
+# Composer cache 固定到项目目录（容器无状态）
+ENV COMPOSER_CACHE_DIR=/home/${USERNAME}/.composer-cache
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
+# 默认启动php命令行
+CMD ["php", "-a"]
