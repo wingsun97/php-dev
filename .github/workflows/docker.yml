@@ -36,3 +36,12 @@ jobs:
             ghcr.io/${{ github.repository }}:8.3.30-cli
             ghcr.io/${{ github.repository }}:8.3.30-cli-alpine
 
+      - name: Build and push php 8.3 cli debian image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./8.3-cli
+          file: ./8.3-cli/Dockerfile-Debian
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:8.3-cli
+            ghcr.io/${{ github.repository }}:8.3-cli-bookworm

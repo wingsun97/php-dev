@@ -1,0 +1,117 @@
+# docker build -t smart-webman:8.3-bookworm .
+# =========================
+# stage 1: build extensions
+# =========================
+FROM php:8.3-cli-bookworm AS build
+
+# 安装构建工具和依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    autoconf \
+    build-essential \
+    pkg-config \
+    pkg-config \
+    git \
+    curl \
+    # GD deps
+    libfreetype-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
+    # intl
+    libicu-dev \
+    # gettext
+    libgettextpo-dev \
+    # xsl
+    libxml2-dev \
+    libxslt-dev \
+    # zip
+    libzip-dev \
+    # imagick
+    libmagickwand-dev \
+    # PostgreSQL
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 配置 GD
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp
+
+# 安装 PHP 内置扩展
+RUN docker-php-ext-install -j$(nproc) \
+    bcmath \
+    ftp \
+    gettext \
+    intl \
+    mysqli \
+    shmop \
+    sockets \
+    sysvsem \
+    xsl \
+    zip \
+    pdo \
+    pdo_mysql \
+    pgsql \
+    pdo_pgsql \
+    gd \
+    opcache \
+    pcntl \
+    soap
+
+# 安装 PECL 扩展（imagick, redis, seaslog）
+RUN pecl install imagick redis seaslog \
+    && docker-php-ext-enable imagick redis seaslog
+
+# 从官方 composer 镜像拷贝 composer
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+
+# 配置 Opcache CLI 可用
+RUN echo "opcache.enable_cli=1" > /usr/local/etc/php/conf.d/docker-php-opcache.ini
+
+
+# =========================
+# stage 2: runtime image
+# =========================
+FROM php:8.3-cli-bookworm
+
+ARG USERNAME=wingsun
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+ENV DOCKER_BUILDKIT=1
+
+# 运行期所需的动态库
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libfreetype6 \
+    libjpeg62-turbo \
+    libpng16-16 \
+    libwebp7 \
+    libxml2 \
+    libxslt1.1 \
+    libzip4 \
+    libmagickwand-6.q16 \
+    libpq5 \
+    gettext \
+    bash \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# 拷贝 PHP 扩展和配置
+COPY --from=build /usr/local/lib/php/extensions /usr/local/lib/php/extensions
+COPY --from=build /usr/local/etc/php/conf.d /usr/local/etc/php/conf.d
+COPY --from=build /usr/local/bin/composer /usr/local/bin/composer
+
+RUN groupadd -g ${USER_GID} ${USERNAME} || true
+RUN useradd -u ${USER_UID} -g ${USERNAME} -s /bin/bash -m ${USERNAME}
+
+RUN chown -R ${USER_UID}:${USER_GID} /home/${USERNAME}
+
+USER ${USERNAME}
+
+WORKDIR /home/${USERNAME}
+
+# Composer cache 固定到项目目录
+ENV COMPOSER_CACHE_DIR=/home/${USERNAME}/.composer-cache
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
+CMD ["php", "-a"]
