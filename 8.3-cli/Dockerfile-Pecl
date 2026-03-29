@@ -1,60 +1,14 @@
+# docker build -f Dockerfile-Pecl -t ghcr.io/wingsun97/php-dev:8.3-cli-pecl .
 # ============================
-# builder（编译 PECL 扩展）
+# 常用扩展（不涉及 grpc）
 # ============================
-FROM php:8.3-cli-bookworm AS builder
+FROM ghcr.io/wingsun97/php-dev:8.3-cli-grpc
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV MAKEFLAGS="-j$(nproc)"
-ENV GRPC_PHP_DONT_WARN_ABOUT_CFLAGS=1
+RUN pecl install redis \
+ && pecl install igbinary \
+ # && pecl install imagick \
+ && pecl install seaslog \
+ && docker-php-ext-enable redis igbinary seaslog \
+ && rm -rf /tmp/pear
 
-# ============================
-# 依赖（PECL 编译必须）
-# ============================
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    autoconf \
-    pkg-config \
-    git \
-    curl \
-    libssl-dev \
-    zlib1g-dev \
-    libcurl4-openssl-dev \
-    libxml2-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# ============================
-# PECL 扩展安装（集中一层，利于缓存）
-# ============================
-RUN pecl channel-update pecl.php.net
-
-RUN yes "" | pecl install \
-    grpc \
-    protobuf \
-    redis \
-    igbinary \
-    seaslog
-
-# ============================
-# runtime（你的 dev base）
-# ============================
-FROM ghcr.io/wingsun97/php-dev:8.3-cli-extra
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# runtime minimal libs（只保留运行必需）
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
-    zlib1g \
-    libcurl4 \
-    && rm -rf /var/lib/apt/lists/*
-
-# ============================
-# 拷贝 PHP 扩展
-# ============================
-COPY --from=builder /usr/local/lib/php/extensions/ /usr/local/lib/php/extensions/
-COPY --from=builder /usr/local/etc/php/conf.d/ /usr/local/etc/php/conf.d/
-
-# ============================
-# 工作目录
-# ============================
 WORKDIR /workspace

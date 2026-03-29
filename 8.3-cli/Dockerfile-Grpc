@@ -1,0 +1,33 @@
+# docker build -f Dockerfile-Grpc -t ghcr.io/wingsun97/php-dev:8.3-cli-grpc .
+FROM ghcr.io/wingsun97/php-dev:8.3-cli-extra
+
+# =========================
+# 环境优化（避免 CI 卡死）
+# =========================
+ENV DEBIAN_FRONTEND=noninteractive \
+    GIT_TERMINAL_PROMPT=0 \
+    COMPOSER_PROCESS_TIMEOUT=2000
+
+# =========================
+# 安装依赖（合并层 + cache 友好）
+# =========================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl unzip \
+    pkg-config autoconf g++ make re2c \
+    cmake \
+    libssl-dev zlib1g-dev \
+    libprotobuf-dev protobuf-compiler \
+ && rm -rf /var/lib/apt/lists/*
+
+# =========================
+# 安装 grpc（锁版本 + 降低失败概率）
+# =========================
+RUN pecl channel-update pecl.php.net \
+ && printf "\n" | pecl install grpc-1.76.0 \
+ && docker-php-ext-enable grpc
+
+# =========================
+# 运行时验证（避免 CI 假成功）
+# =========================
+RUN php --ri grpc | grep "grpc support" \
+ && php -r "exit(class_exists('Grpc\\\\Channel') ? 0 : 1);"

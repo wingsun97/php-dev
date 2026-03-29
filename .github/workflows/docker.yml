@@ -64,6 +64,16 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:8.3-cli-extra
 
+      - name: Build and push php 8.3 cli + grpc image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./8.3-cli
+          file: ./8.3-cli/Dockerfile-Grpc
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:8.3-cli-grpc
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push php 8.3 cli + pecl image
         uses: docker/build-push-action@v5
@@ -74,3 +84,11 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:8.3-cli-pecl
 
+      - name: Build and push php 8.3 cli + develop image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./8.3-cli
+          file: ./8.3-cli/Dockerfile-Dev
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:8.3-cli-dev

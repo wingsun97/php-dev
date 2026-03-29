@@ -1,0 +1,151 @@
+FROM ghcr.io/wingsun97/php-dev:8.3-cli-pecl
+
+ARG USERNAME=wingsun
+ARG UID=1000
+ARG GID=1000
+
+# 是否安装额外开发/排障工具（体积较大，默认关闭）
+ARG INSTALL_EXTRA_TOOLS=1
+# 是否安装音频命令行工具（ffmpeg/sox/opus-tools，体积较大，默认关闭）
+ARG INSTALL_AUDIO_CLI_TOOLS=1
+
+# 安装基础必需工具
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        bash \
+        nano \
+        lsb-release \
+        openssh-client \
+        ca-certificates \
+        zip \
+        unzip \
+        bzip2 \
+        protobuf-compiler \
+        build-essential \
+        autoconf \
+        pkg-config \
+        libopus-dev \
+        libopus0 \
+        libstdc++6 \
+        libgomp1 \
+        less \
+        ripgrep \
+        netcat-openbsd \
+        redis-tools \
+        iputils-ping \
+        procps \
+        iproute2 \
+        jq \
+        socat \
+ && if [ "$INSTALL_EXTRA_TOOLS" = "1" ]; then \
+            apt-get install -y --no-install-recommends \
+                wget \
+                vim \
+                gnupg \
+                tree \
+                tmux \
+                default-mysql-client \
+                dnsutils \
+                inetutils-telnet \
+                net-tools \
+                lsof \
+                strace; \
+        fi \
+ && if [ "$INSTALL_AUDIO_CLI_TOOLS" = "1" ]; then \
+            apt-get install -y --no-install-recommends \
+                opus-tools \
+                ffmpeg \
+                sox; \
+        fi \
+ && rm -rf /var/lib/apt/lists/*
+
+# 解决 git safe.directory（避免 devcontainer 权限警告）
+RUN git config --system --add safe.directory '*' \
+ && git config --system core.fileMode false \
+ && git config --system advice.detachedHead false
+
+# ============================
+# 用户
+# ============================
+RUN groupadd -g ${GID} ${USERNAME} \
+    && useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USERNAME}
+
+ENV HOME=/home/${USERNAME}
+WORKDIR /workspace
+
+# ============================
+# 统一 cache
+# ============================
+ENV DEV_HOME=$HOME/.home-dev
+
+ENV CACHE_HOME=$DEV_HOME/cache
+ENV PNPM_HOME=$CACHE_HOME/pnpm
+ENV PNPM_STORE_PATH=$CACHE_HOME/pnpm
+ENV NPM_CONFIG_CACHE=$CACHE_HOME/npm
+ENV COMPOSER_HOME=$CACHE_HOME/composer
+# ENV COMPOSER_CACHE_DIR=$COMPOSER_HOME/cache
+ENV GOPATH=$CACHE_HOME/go
+ENV GOCACHE=$CACHE_HOME/go-build
+ENV PIP_CACHE_DIR=$CACHE_HOME/pip
+
+RUN mkdir -p \
+    $CACHE_HOME \
+    $COMPOSER_HOME \
+    # $COMPOSER_CACHE_DIR \
+ && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
+
+# ============================
+# Go
+# ============================
+#ENV GO_VERSION=1.26.1
+
+#RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz -o /tmp/go.tgz \
+# && rm -rf /usr/local/go \
+# && tar -C /usr/local -xzf /tmp/go.tgz \
+# && rm /tmp/go.tgz \
+# && rm -rf /usr/local/go/pkg /usr/local/go/test
+
+#ENV PATH=$PATH:/usr/local/go/bin
+
+# ============================
+# Composer
+# ============================
+RUN curl -sS https://getcomposer.org/installer | php \
+    -- --install-dir=/usr/local/bin --filename=composer
+
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
+# ============================
+# Python（可选）
+# ============================
+#RUN sudo apt-get update && sudo apt-get install -y \
+#    python3 python3-pip python3-venv \
+#    && sudo rm -rf /var/lib/apt/lists/*
+
+#ENV PATH=$PATH:$HOME/.local/bin
+
+USER ${USERNAME}
+# ============================
+# Node (nvm + pnpm)
+# ============================
+#ENV NVM_DIR=$HOME/.nvm
+
+#RUN mkdir -p $NVM_DIR \
+#    && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.6/install.sh | bash \
+#    && . $NVM_DIR/nvm.sh \
+#    && nvm install --lts \
+#    && nvm use --lts \
+#    && npm install -g pnpm \
+#    && npm cache clean --force
+
+# ============================
+# 验证（强烈推荐）
+# ============================
+#RUN php -m | grep grpc \
+# && php -m | grep protobuf \
+# && php -m | grep redis \
+# && php -m | grep seaslog
+
+SHELL ["/bin/bash", "-c"]
+
