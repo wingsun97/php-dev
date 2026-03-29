@@ -1,0 +1,29 @@
+FROM ghcr.io/wingsun97/php-dev:8.3-cli-core
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ============================
+# 额外依赖
+# ============================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxml2-dev \
+    libxslt-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================
+# 可选扩展
+# ============================
+RUN docker-php-ext-install \
+    xsl \
+    soap \
+    pgsql \
+    pdo_pgsql \
+    gettext \
+    shmop \
+    sysvsem \
+    sockets \
+    ftp
+
+WORKDIR /workspace
+

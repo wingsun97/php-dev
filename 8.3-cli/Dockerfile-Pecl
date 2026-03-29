@@ -1,0 +1,43 @@
+# ============================
+# builder（只用于编译）
+# ============================
+FROM php:8.3-cli-bookworm AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV MAKEFLAGS="-j2"
+ENV GRPC_PHP_DONT_WARN_ABOUT_CFLAGS=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    autoconf \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN yes "" | pecl install grpc \
+ && yes "" | pecl install protobuf \
+ && pecl install seaslog \
+ && pecl install igbinary \
+ && pecl install redis
+
+# ============================
+# runtime（基于 core-min）
+# ============================
+FROM ghcr.io/wingsun97/php-dev:8.3-cli-extra
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 拷贝扩展
+COPY --from=builder /usr/local/lib/php/extensions/ /usr/local/lib/php/extensions/
+
+# 启用
+RUN docker-php-ext-enable grpc \
+ && docker-php-ext-enable protobuf \
+ && docker-php-ext-enable seaslog \
+ && docker-php-ext-enable igbinary \
+ && docker-php-ext-enable redis
+
+WORKDIR /workspace
+

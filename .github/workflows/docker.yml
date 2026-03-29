@@ -45,3 +45,32 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:8.3-cli
             ghcr.io/${{ github.repository }}:8.3-cli-bookworm
+
+      - name: Build and push php 8.3 cli + core image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./8.3-cli
+          file: ./8.3-cli/Dockerfile-Core
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:8.3-cli-core
+
+      - name: Build and push php 8.3 cli + core extra image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./8.3-cli
+          file: ./8.3-cli/Dockerfile-Core-Extra
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:8.3-cli-extra
+
+
+      - name: Build and push php 8.3 cli + pecl image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./8.3-cli
+          file: ./8.3-cli/Dockerfile-Pecl
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:8.3-cli-pecl
+
