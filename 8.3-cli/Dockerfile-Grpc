@@ -1,4 +1,4 @@
-# docker build -f Dockerfile-Grpc -t ghcr.io/wingsun97/php-dev:8.3-cli-grpc .
+# docker build -f Dockerfile-Grpc -t php-dev:8.3-cli-grpc .
 FROM ghcr.io/wingsun97/php-dev:8.3-cli-core
 
 # =========================
