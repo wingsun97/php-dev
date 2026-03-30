@@ -79,21 +79,28 @@ WORKDIR /workspace
 # ============================
 ENV DEV_HOME=$HOME/.home-dev
 
-ENV CACHE_HOME=$DEV_HOME/cache
-ENV PNPM_HOME=$CACHE_HOME/pnpm
-ENV PNPM_STORE_PATH=$CACHE_HOME/pnpm
-ENV NPM_CONFIG_CACHE=$CACHE_HOME/npm
-ENV COMPOSER_HOME=$CACHE_HOME/composer
-# ENV COMPOSER_CACHE_DIR=$COMPOSER_HOME/cache
-ENV GOPATH=$CACHE_HOME/go
-ENV GOCACHE=$CACHE_HOME/go-build
-ENV PIP_CACHE_DIR=$CACHE_HOME/pip
+# use nvm
+ENV PNPM_HOME=$DEV_HOME/pnpm
+ENV PNPM_STORE_PATH=$PNPM_HOME/store
+ENV NPM_CONFIG_CACHE=$DEV_HOME/npm
+
+ENV COMPOSER_HOME=$DEV_HOME/composer
+ENV COMPOSER_CACHE_DIR=$COMPOSER_HOME/cache
+ENV COMPOSER_VENDOR_DIR=$COMPOSER_HOME/vendor
+
+ENV GOPATH=$DEV_HOME/go
+ENV GOCACHE=$DEV_HOME/go-build
+
+ENV PIP_CACHE_DIR=$DEV_HOME/pip
+
+# ENV PATH=$PNPM_HOME:$PATH:$HOME/.local/bin
+ENV PATH=$PATH:$HOME/.local/bin
 
 RUN mkdir -p \
-    $CACHE_HOME \
-    $COMPOSER_HOME \
-    # $COMPOSER_CACHE_DIR \
- && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
+    $COMPOSER_CACHE_DIR \
+    $COMPOSER_VENDOR_DIR \
+    $PNPM_STORE_PATH \
+ && chown -R ${USERNAME}:${USERNAME} ${HOME}
 
 # ============================
 # Go
@@ -107,6 +114,10 @@ RUN mkdir -p \
 # && rm -rf /usr/local/go/pkg /usr/local/go/test
 
 #ENV PATH=$PATH:/usr/local/go/bin
+# gRPC plugins
+# protoc-gen-go / protoc-gen-go-grpc 由容器内手动安装到 /home/node/go/bin
+#RUN /usr/local/go/bin/go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
+# && /usr/local/go/bin/go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 # ============================
 # Composer
