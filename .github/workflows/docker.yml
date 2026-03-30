@@ -24,24 +24,31 @@ jobs:
       - name: Detect changes
         id: changes
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD || echo "")
+          echo "before: ${{ github.event.before }}"
+          echo "after:  ${{ github.sha }}"
 
-          echo "changed files:"
-          echo "$CHANGED"
-
-          core=false
-          grpc=false
-          devbase=false
-          dev=false
-
-          [[ "$CHANGED" == *"Dockerfile-Core"* ]] && core=true
-          [[ "$CHANGED" == *"Dockerfile-Grpc"* ]] && grpc=true
-          [[ "$CHANGED" == *"Dockerfile-DevBase"* ]] && devbase=true
-          [[ "$CHANGED" == *"Dockerfile-Dev"* ]] && dev=true
-
-          # fallback（关键：防止完全不 build）
-          if [ -z "$CHANGED" ]; then
+          # fallback（第一次 commit）
+          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            echo "First commit, force build all"
+            core=true
+            grpc=true
+            devbase=true
             dev=true
+          else
+            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+
+            echo "changed files:"
+            echo "$CHANGED"
+
+            core=false
+            grpc=false
+            devbase=false
+            dev=false
+
+            [[ "$CHANGED" == *"8.3-cli/Dockerfile-Core"* ]] && core=true
+            [[ "$CHANGED" == *"8.3-cli/Dockerfile-Grpc"* ]] && grpc=true
+            [[ "$CHANGED" == *"8.3-cli/Dockerfile-DevBase"* ]] && devbase=true
+            [[ "$CHANGED" == *"8.3-cli/Dockerfile-Dev"* ]] && dev=true
           fi
 
           echo "core=$core" >> $GITHUB_OUTPUT
