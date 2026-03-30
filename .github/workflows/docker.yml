@@ -20,6 +20,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ⭐必须
 
       - name: Detect changes
         id: changes
@@ -27,9 +29,14 @@ jobs:
           echo "before: ${{ github.event.before }}"
           echo "after:  ${{ github.sha }}"
 
-          # fallback（第一次 commit）
-          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-            echo "First commit, force build all"
+          core=false
+          grpc=false
+          devbase=false
+          dev=false
+
+          # 如果 before commit 不存在 → fallback
+          if ! git cat-file -e ${{ github.event.before }}^{commit} 2>/dev/null; then
+            echo "⚠️ before commit not found, fallback to full build"
             core=true
             grpc=true
             devbase=true
@@ -39,11 +46,6 @@ jobs:
 
             echo "changed files:"
             echo "$CHANGED"
-
-            core=false
-            grpc=false
-            devbase=false
-            dev=false
 
             [[ "$CHANGED" == *"8.3-cli/Dockerfile-Core"* ]] && core=true
             [[ "$CHANGED" == *"8.3-cli/Dockerfile-Grpc"* ]] && grpc=true
