@@ -1,4 +1,4 @@
-name: Build PHP Docker Images (Final Stable)
+name: Build PHP Docker Images (Final Smart Stable)
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
 
     steps:
       # =========================
-      # Checkout（必须 full history）
+      # Checkout（必须完整历史）
       # =========================
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
 
       # =========================
-      # Detect changes（稳定版）
+      # Detect changes（可靠版）
       # =========================
       - name: Detect changes
         id: changes
@@ -42,7 +42,7 @@ jobs:
           dev=false
 
           if ! git cat-file -e ${{ github.event.before }}^{commit} 2>/dev/null; then
-            echo "⚠️ fallback: build all"
+            echo "⚠️ fallback: assume all changed"
             core=true
             grpc=true
             devbase=true
@@ -75,65 +75,65 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # =========================
-      # Build core
+      # Smart Ensure（核心逻辑 ⭐）
       # =========================
-      - name: Build core
-        if: steps.changes.outputs.core == 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: ./8.3-cli
-          file: ./8.3-cli/Dockerfile-Core
-          push: true
-          tags: ghcr.io/${{ github.repository }}:8.3-cli-core
+      - name: Ensure dependency images exist (smart)
+        run: |
+          set -e
+
+          REPO=ghcr.io/${{ github.repository }}
+
+          ensure_image () {
+            NAME=$1
+            DOCKERFILE=$2
+            CHANGED=$3
+
+            if [ "$CHANGED" = "true" ]; then
+              echo "🔥 $NAME changed → rebuild"
+
+              docker build -t $REPO:$NAME -f $DOCKERFILE ./8.3-cli
+              docker push $REPO:$NAME
+
+            elif docker manifest inspect $REPO:$NAME > /dev/null 2>&1; then
+              echo "✅ $NAME exists → skip"
+
+            else
+              echo "⚠️ $NAME missing → build"
+
+              docker build -t $REPO:$NAME -f $DOCKERFILE ./8.3-cli
+              docker push $REPO:$NAME
+            fi
+          }
+
+          ensure_image "8.3-cli-core" "./8.3-cli/Dockerfile-Core" "${{ steps.changes.outputs.core }}"
+          ensure_image "8.3-cli-grpc" "./8.3-cli/Dockerfile-Grpc" "${{ steps.changes.outputs.grpc }}"
+          ensure_image "8.3-cli-devbase" "./8.3-cli/Dockerfile-DevBase" "${{ steps.changes.outputs.devbase }}"
 
       # =========================
-      # Build grpc
+      # Build dev（最终层）
       # =========================
-      - name: Build grpc
-        if: steps.changes.outputs.grpc == 'true' || steps.changes.outputs.core == 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: ./8.3-cli
-          file: ./8.3-cli/Dockerfile-Grpc
-          push: true
-          tags: ghcr.io/${{ github.repository }}:8.3-cli-grpc
-
-      # =========================
-      # Build dev-base
-      # =========================
-      - name: Build dev-base
+      - name: Build dev image
         if: |
+          steps.changes.outputs.dev == 'true' ||
           steps.changes.outputs.devbase == 'true' ||
           steps.changes.outputs.grpc == 'true' ||
           steps.changes.outputs.core == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
-          file: ./8.3-cli/Dockerfile-DevBase
+          file: ./8.3-cli/Dockerfile-Dev
           push: true
-          tags: ghcr.io/${{ github.repository }}:8.3-cli-devbase
+          tags: ghcr.io/${{ github.repository }}:8.3-cli-dev
 
       # =========================
-      # Ensure dev-base exists（关键修复 ⭐）
+      # Fallback（绝不会空跑）
       # =========================
-      - name: Ensure dev-base exists
-        run: |
-          if ! docker manifest inspect ghcr.io/${{ github.repository }}:8.3-cli-devbase > /dev/null 2>&1; then
-            echo "⚠️ dev-base not found, building it now..."
-
-            docker build \
-              -t ghcr.io/${{ github.repository }}:8.3-cli-devbase \
-              -f ./8.3-cli/Dockerfile-DevBase ./8.3-cli
-
-            docker push ghcr.io/${{ github.repository }}:8.3-cli-devbase
-          else
-            echo "✅ dev-base exists"
-          fi
-
-      # =========================
-      # Build dev（最终层）
-      # =========================
-      - name: Build dev
+      - name: Fallback build dev
+        if: |
+          steps.changes.outputs.dev != 'true' &&
+          steps.changes.outputs.devbase != 'true' &&
+          steps.changes.outputs.grpc != 'true' &&
+          steps.changes.outputs.core != 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
