@@ -1,4 +1,4 @@
-FROM ghcr.io/wingsun97/php-dev:8.3-cli-pecl
+FROM ghcr.io/wingsun97/php-dev:8.3-cli-devbase
 
 ARG USERNAME=wingsun
 ARG UID=1000

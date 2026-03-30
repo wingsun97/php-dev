@@ -1,4 +1,4 @@
-FROM ghcr.io/wingsun97/php-dev:8.3-cli-core
+FROM ghcr.io/wingsun97/php-dev:8.3-cli-grpc
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -24,6 +24,16 @@ RUN docker-php-ext-install \
     sysvsem \
     sockets \
     ftp
+
+# ============================
+# 常用扩展（不涉及 grpc）
+# ============================
+RUN pecl install redis \
+ && pecl install igbinary \
+ # && pecl install imagick \
+ && pecl install seaslog \
+ && docker-php-ext-enable redis igbinary seaslog \
+ && rm -rf /tmp/pear
 
 WORKDIR /workspace
 
