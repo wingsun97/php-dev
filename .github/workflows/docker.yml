@@ -1,4 +1,4 @@
-name: Build PHP Docker Images (Core → Dev)
+name: Build PHP Docker Images (Final Stable)
 
 on:
   push:
@@ -11,68 +11,43 @@ permissions:
   contents: read
   packages: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  detect:
-    runs-on: ubuntu-latest
-
-    outputs:
-      core: ${{ steps.filter.outputs.core }}
-      grpc: ${{ steps.filter.outputs.grpc }}
-      devbase: ${{ steps.filter.outputs.devbase }}
-      dev: ${{ steps.filter.outputs.dev }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # ⭐关键修复（避免 diff 问题）
-
-      - name: Detect changed files
-        id: changes
-        run: |
-          git fetch origin main --depth=2 || true
-          BASE=$(git merge-base origin/main HEAD || echo HEAD)
-          git diff --name-only $BASE HEAD > changed.txt
-          cat changed.txt
-
-      - name: Classify changes
-        id: filter
-        run: |
-          python3 << 'EOF'
-          import json
-
-          changed = open("changed.txt").read().splitlines()
-
-          def match(prefix):
-              return any(f.startswith(prefix) for f in changed)
-
-          # === layer detection ===
-          core = match("8.3-cli/Dockerfile-Core")
-          grpc = match("8.3-cli/Dockerfile-Grpc")
-          devbase = match("8.3-cli/Dockerfile-DevBase")
-          dev = match("8.3-cli/Dockerfile-Dev")
-
-          # === safety fallback (VERY IMPORTANT) ===
-          if not changed:
-              core = grpc = devbase = dev = True
-
-          # dev always rebuild if anything changes
-          dev = core or grpc or devbase or dev
-
-          # output MUST be lowercase string
-          print("core=" + str(core).lower())
-          print("grpc=" + str(grpc).lower())
-          print("devbase=" + str(devbase).lower())
-          print("dev=" + str(dev).lower())
-          EOF
-
-  build-core:
-    needs: detect
-    if: needs.detect.outputs.core == 'true'
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Detect changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD || echo "")
+
+          echo "changed files:"
+          echo "$CHANGED"
+
+          core=false
+          grpc=false
+          devbase=false
+          dev=false
+
+          [[ "$CHANGED" == *"Dockerfile-Core"* ]] && core=true
+          [[ "$CHANGED" == *"Dockerfile-Grpc"* ]] && grpc=true
+          [[ "$CHANGED" == *"Dockerfile-DevBase"* ]] && devbase=true
+          [[ "$CHANGED" == *"Dockerfile-Dev"* ]] && dev=true
+
+          # fallback（关键：防止完全不 build）
+          if [ -z "$CHANGED" ]; then
+            dev=true
+          fi
+
+          echo "core=$core" >> $GITHUB_OUTPUT
+          echo "grpc=$grpc" >> $GITHUB_OUTPUT
+          echo "devbase=$devbase" >> $GITHUB_OUTPUT
+          echo "dev=$dev" >> $GITHUB_OUTPUT
 
       - name: Login GHCR
         uses: docker/login-action@v3
@@ -81,7 +56,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # =========================
+      # core
+      # =========================
       - name: Build core
+        if: steps.changes.outputs.core == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
@@ -89,23 +68,11 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:8.3-cli-core
 
-
-  build-grpc:
-    needs: detect
-    if: needs.detect.outputs.grpc == 'true' || needs.detect.outputs.core == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build grpc (50min isolated)
+      # =========================
+      # grpc（重型）
+      # =========================
+      - name: Build grpc
+        if: steps.changes.outputs.grpc == 'true' || steps.changes.outputs.core == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
@@ -113,23 +80,14 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:8.3-cli-grpc
 
-
-  build-devbase:
-    needs: detect
-    if: needs.detect.outputs.devbase == 'true' || needs.detect.outputs.grpc == 'true' || needs.detect.outputs.core == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+      # =========================
+      # dev-base
+      # =========================
       - name: Build dev-base
+        if: |
+          steps.changes.outputs.devbase == 'true' ||
+          steps.changes.outputs.grpc == 'true' ||
+          steps.changes.outputs.core == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
@@ -137,23 +95,31 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:8.3-cli-devbase
 
-
-  build-dev:
-    needs: detect
-    if: needs.detect.outputs.dev == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login GHCR
-        uses: docker/login-action@v3
+      # =========================
+      # dev（永远有兜底）
+      # =========================
+      - name: Build dev
+        if: |
+          steps.changes.outputs.dev == 'true' ||
+          steps.changes.outputs.devbase == 'true' ||
+          steps.changes.outputs.grpc == 'true' ||
+          steps.changes.outputs.core == 'true'
+        uses: docker/build-push-action@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          context: ./8.3-cli
+          file: ./8.3-cli/Dockerfile-Dev
+          push: true
+          tags: ghcr.io/${{ github.repository }}:8.3-cli-dev
 
-      - name: Build dev image
+      # =========================
+      # fallback（最终保险）
+      # =========================
+      - name: Fallback build dev (safety)
+        if: |
+          steps.changes.outputs.dev != 'true' &&
+          steps.changes.outputs.devbase != 'true' &&
+          steps.changes.outputs.grpc != 'true' &&
+          steps.changes.outputs.core != 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
