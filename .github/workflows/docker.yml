@@ -25,12 +25,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0   # ⭐关键修复（避免 diff 问题）
 
       - name: Detect changed files
         id: changes
         run: |
-          git diff --name-only HEAD~1 HEAD > changed.txt
+          git fetch origin main --depth=2 || true
+          BASE=$(git merge-base origin/main HEAD || echo HEAD)
+          git diff --name-only $BASE HEAD > changed.txt
           cat changed.txt
 
       - name: Classify changes
@@ -44,20 +46,24 @@ jobs:
           def match(prefix):
               return any(f.startswith(prefix) for f in changed)
 
-          # map file changes → layers
+          # === layer detection ===
           core = match("8.3-cli/Dockerfile-Core")
           grpc = match("8.3-cli/Dockerfile-Grpc")
-
-          # dev-base depends on dev-base changes
           devbase = match("8.3-cli/Dockerfile-DevBase")
+          dev = match("8.3-cli/Dockerfile-Dev")
 
-          # dev always safe rebuild trigger if anything above changes
-          dev = core or grpc or devbase or match("Dockerfile-Dev")
+          # === safety fallback (VERY IMPORTANT) ===
+          if not changed:
+              core = grpc = devbase = dev = True
 
-          print("core=" + json.dumps(core))
-          print("grpc=" + json.dumps(grpc))
-          print("devbase=" + json.dumps(devbase))
-          print("dev=" + json.dumps(dev))
+          # dev always rebuild if anything changes
+          dev = core or grpc or devbase or dev
+
+          # output MUST be lowercase string
+          print("core=" + str(core).lower())
+          print("grpc=" + str(grpc).lower())
+          print("devbase=" + str(devbase).lower())
+          print("dev=" + str(dev).lower())
           EOF
 
   build-core:
@@ -123,7 +129,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build dev-base (pecl + core-extra)
+      - name: Build dev-base
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
@@ -133,8 +139,8 @@ jobs:
 
 
   build-dev:
-    needs: [detect, build-grpc, build-devbase, build-core]
-    if: always() && needs.detect.outputs.dev == 'true'
+    needs: detect
+    if: needs.detect.outputs.dev == 'true'
     runs-on: ubuntu-latest
 
     steps:
