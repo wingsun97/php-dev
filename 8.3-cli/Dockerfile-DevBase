@@ -1,19 +1,80 @@
+# 默认构建（开发全功能）
+# docker build -t php-dev:full .
+# 精简版（CI / 轻量开发）
+# docker build -t php-dev:slim \
+#   --build-arg INSTALL_EXTRA_TOOLS=false \
+#   --build-arg INSTALL_NET_TOOLS=false \
+#   --build-arg INSTALL_AUDIO_TOOLS=false .
+# Debug 专用版本
+# docker build -t php-dev:debug \
+#   --build-arg INSTALL_AUDIO_TOOLS=true .
 # php-dev:8.3-cli-devbase
 FROM ghcr.io/wingsun97/php-dev:8.3-cli-grpc
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ============================
-# 额外依赖
+# 构建参数（核心 ⭐）
+# ============================
+ARG INSTALL_DEV_TOOLS=true
+ARG INSTALL_EXTRA_TOOLS=true
+ARG INSTALL_NET_TOOLS=true
+ARG INSTALL_AUDIO_TOOLS=false
+ARG INSTALL_DB_TOOLS=true
+
+# ============================
+# 基础 + 条件安装（关键优化 ⭐）
 # ============================
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # ===== 必备基础（始终安装）=====
+    git \
+    curl \
+    bash \
+    ca-certificates \
+    zip \
+    unzip \
+    bzip2 \
+    protobuf-compiler \
+    build-essential \
+    autoconf \
+    pkg-config \
+    libopus-dev \
+    libopus0 \
+    libstdc++6 \
+    libgomp1 \
+    less \
+    ripgrep \
+    jq \
+    socat \
+    # ===== PHP 依赖 =====
     libxml2-dev \
     libxslt-dev \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    \
+    # ===== Dev Tools（可选）=====
+    $(if [ "$INSTALL_DEV_TOOLS" = "true" ]; then echo \
+        nano lsb-release openssh-client procps iproute2; fi) \
+    \
+    # ===== Extra Tools（可选）=====
+    $(if [ "$INSTALL_EXTRA_TOOLS" = "true" ]; then echo \
+        wget vim gnupg tree tmux; fi) \
+    \
+    # ===== 网络工具（可选）=====
+    $(if [ "$INSTALL_NET_TOOLS" = "true" ]; then echo \
+        netcat-openbsd iputils-ping dnsutils inetutils-telnet net-tools lsof strace; fi) \
+    \
+    # ===== DB 工具（可选）=====
+    $(if [ "$INSTALL_DB_TOOLS" = "true" ]; then echo \
+        default-mysql-client redis-tools; fi) \
+    \
+    # ===== 音频工具（默认关闭，太重）=====
+    $(if [ "$INSTALL_AUDIO_TOOLS" = "true" ]; then echo \
+        opus-tools ffmpeg sox; fi) \
+    \
+ && rm -rf /var/lib/apt/lists/*
 
 # ============================
-# 可选扩展
+# PHP 扩展（保持合并层 ⭐）
 # ============================
 RUN docker-php-ext-install \
     xsl \
@@ -24,17 +85,62 @@ RUN docker-php-ext-install \
     shmop \
     sysvsem \
     sockets \
-    ftp
-
-# ============================
-# 常用扩展（不涉及 grpc）
-# ============================
-RUN pecl install redis \
- && pecl install igbinary \
- # && pecl install imagick \
- && pecl install seaslog \
+    ftp \
+ && pecl install redis igbinary seaslog \
  && docker-php-ext-enable redis igbinary seaslog \
  && rm -rf /tmp/pear
 
-WORKDIR /workspace
+# ============================
+# Composer
+# ============================
+RUN curl -sS https://getcomposer.org/installer | php \
+    -- --install-dir=/usr/local/bin --filename=composer
 
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
+# ============================
+# git config
+# ============================
+RUN git config --system --add safe.directory '*' \
+ && git config --system core.fileMode false \
+ && git config --system advice.detachedHead false
+
+# ============================
+# 用户
+# ============================
+ARG USERNAME=wingsun
+ARG UID=1000
+ARG GID=1000
+
+RUN groupadd -g ${GID} ${USERNAME} \
+ && useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USERNAME}
+
+# ============================
+# cache（核心设计 ⭐）
+# ============================
+ENV HOME=/home/${USERNAME}
+ENV DEV_HOME=$HOME/.home-dev
+
+ENV PNPM_HOME=$DEV_HOME/pnpm
+ENV PNPM_STORE_PATH=$PNPM_HOME/store
+ENV NPM_CONFIG_CACHE=$DEV_HOME/npm
+
+ENV COMPOSER_HOME=$DEV_HOME/composer
+ENV COMPOSER_CACHE_DIR=$COMPOSER_HOME/cache
+ENV COMPOSER_VENDOR_DIR=$COMPOSER_HOME/vendor
+
+ENV GOPATH=$DEV_HOME/go
+ENV GOCACHE=$DEV_HOME/go-build
+
+ENV PIP_CACHE_DIR=$DEV_HOME/pip
+
+RUN mkdir -p \
+    $COMPOSER_CACHE_DIR \
+    $COMPOSER_VENDOR_DIR \
+    $PNPM_STORE_PATH \
+ && chown -R ${USERNAME}:${USERNAME} ${HOME}
+
+# ============================
+# 工作目录
+# ============================
+WORKDIR /workspace

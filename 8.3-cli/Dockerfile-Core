@@ -3,22 +3,26 @@ FROM php:8.3-cli-bookworm
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ============================
-# 运行 + 编译依赖（最小集）
+# build + install + cleanup（关键优化 ⭐）
 # ============================
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # ===== build 依赖 =====
     libicu-dev \
     libzip-dev \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
     libonig-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# ============================
-# 核心扩展（90%项目用到）
-# ============================
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install \
+ \
+    # ===== runtime 依赖（明确保留）=====
+    libicu72 \
+    libzip4 \
+    libpng16-16 \
+    libjpeg62-turbo \
+    libfreetype6 \
+ \
+ && docker-php-ext-configure gd --with-freetype --with-jpeg \
+ && docker-php-ext-install \
     bcmath \
     intl \
     mbstring \
@@ -28,7 +32,17 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     zip \
     gd \
     opcache \
-    pcntl
+    pcntl \
+ \
+ # ===== 删除 build 依赖（核心优化 ⭐）=====
+ && apt-get purge -y --auto-remove \
+    libicu-dev \
+    libzip-dev \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    libonig-dev \
+ \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
-

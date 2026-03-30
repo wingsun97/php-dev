@@ -1,4 +1,4 @@
-name: Build PHP Docker Images (Final Smart Stable)
+name: Build PHP Docker Images (Optimized Fast Dev)
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
 
     steps:
       # =========================
-      # Checkout（必须完整历史）
+      # Checkout
       # =========================
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,21 +28,17 @@ jobs:
           fetch-depth: 0
 
       # =========================
-      # Detect changes（可靠版）
+      # Detect changes
       # =========================
       - name: Detect changes
         id: changes
         run: |
-          echo "before: ${{ github.event.before }}"
-          echo "after:  ${{ github.sha }}"
-
           core=false
           grpc=false
           devbase=false
           dev=false
 
           if ! git cat-file -e ${{ github.event.before }}^{commit} 2>/dev/null; then
-            echo "⚠️ fallback: assume all changed"
             core=true
             grpc=true
             devbase=true
@@ -50,13 +46,10 @@ jobs:
           else
             CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
 
-            echo "changed files:"
-            echo "$CHANGED"
-
-            [[ "$CHANGED" == *"8.3-cli/Dockerfile-Core"* ]] && core=true
-            [[ "$CHANGED" == *"8.3-cli/Dockerfile-Grpc"* ]] && grpc=true
-            [[ "$CHANGED" == *"8.3-cli/Dockerfile-DevBase"* ]] && devbase=true
-            [[ "$CHANGED" == *"8.3-cli/Dockerfile-Dev"* ]] && dev=true
+            [[ "$CHANGED" == *"Dockerfile-Core"* ]] && core=true
+            [[ "$CHANGED" == *"Dockerfile-Grpc"* ]] && grpc=true
+            [[ "$CHANGED" == *"Dockerfile-DevBase"* ]] && devbase=true
+            [[ "$CHANGED" == *"Dockerfile-Dev"* ]] && dev=true
           fi
 
           echo "core=$core" >> $GITHUB_OUTPUT
@@ -75,12 +68,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # =========================
-      # Smart Ensure（核心逻辑 ⭐）
+      # Setup buildx（开启缓存能力）
+      # =========================
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # =========================
+      # Smart Ensure（依赖构建）
       # =========================
       - name: Ensure dependency images exist (smart)
         run: |
           set -e
-
           REPO=ghcr.io/${{ github.repository }}
 
           ensure_image () {
@@ -90,7 +88,6 @@ jobs:
 
             if [ "$CHANGED" = "true" ]; then
               echo "🔥 $NAME changed → rebuild"
-
               docker build -t $REPO:$NAME -f $DOCKERFILE ./8.3-cli
               docker push $REPO:$NAME
 
@@ -99,7 +96,6 @@ jobs:
 
             else
               echo "⚠️ $NAME missing → build"
-
               docker build -t $REPO:$NAME -f $DOCKERFILE ./8.3-cli
               docker push $REPO:$NAME
             fi
@@ -110,14 +106,9 @@ jobs:
           ensure_image "8.3-cli-devbase" "./8.3-cli/Dockerfile-DevBase" "${{ steps.changes.outputs.devbase }}"
 
       # =========================
-      # Build dev（最终层）
+      # Build dev（秒级优化版 ⭐）
       # =========================
-      - name: Build dev image
-        if: |
-          steps.changes.outputs.dev == 'true' ||
-          steps.changes.outputs.devbase == 'true' ||
-          steps.changes.outputs.grpc == 'true' ||
-          steps.changes.outputs.core == 'true'
+      - name: Build dev image (fast)
         uses: docker/build-push-action@v5
         with:
           context: ./8.3-cli
@@ -125,18 +116,6 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:8.3-cli-dev
 
-      # =========================
-      # Fallback（绝不会空跑）
-      # =========================
-      - name: Fallback build dev
-        if: |
-          steps.changes.outputs.dev != 'true' &&
-          steps.changes.outputs.devbase != 'true' &&
-          steps.changes.outputs.grpc != 'true' &&
-          steps.changes.outputs.core != 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: ./8.3-cli
-          file: ./8.3-cli/Dockerfile-Dev
-          push: true
-          tags: ghcr.io/${{ github.repository }}:8.3-cli-dev
+          # 🔥 核心优化：registry cache
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
